@@ -1,13 +1,14 @@
 // /*global contract, config, it, assert*/
 const StakingPool = require('Embark/contracts/StakingPool');
+const SNT = require('Embark/contracts/SNT');
 
 let iuri, jonathan, richard;
 
 // For documentation please see https://embark.status.im/docs/contracts_testing.html
 config({
   contracts: {
-    "StakingPool": {
-    }
+    "StakingPool": {args: ["$SNT"]},
+    "SNT": {}
   }
 }, (_err, accounts) => {
   iuri = accounts[0];
@@ -19,6 +20,26 @@ config({
 
 contract("StakingPool", function () {
   this.timeout(0);
+
+  before(async () => {
+    // distribute SNT
+    await SNT.methods.transfer(jonathan, "1000000000000000000000").send({from: iuri});
+    await SNT.methods.transfer(richard, "1000000000000000000000").send({from: iuri});
+
+    // approve StakingPool to transfer tokens
+    let balance;
+    balance = await SNT.methods.balanceOf(iuri).call();
+    assert.strictEqual(balance, "8000000000000000000000");
+    await SNT.methods.approve(StakingPool.address, "10000000000000000000000").send({from: iuri});
+
+    balance = await SNT.methods.balanceOf(jonathan).call();
+    assert.strictEqual(balance, "1000000000000000000000");
+    await SNT.methods.approve(StakingPool.address, "10000000000000000000000").send({from: jonathan});
+
+    balance = await SNT.methods.balanceOf(richard).call();
+    assert.strictEqual(balance, "1000000000000000000000");
+    await SNT.methods.approve(StakingPool.address, "10000000000000000000000").send({from: richard});
+  })
 
   describe("initial state", () => {
     it("initial exchangeRate should be 1", async function () {
@@ -32,14 +53,14 @@ contract("StakingPool", function () {
     });
 
     it("initial balance should be 0", async function () {
-      let rate = await web3.eth.getBalance(StakingPool.address);
-      assert.strictEqual(rate, "0");
+      let balance = await SNT.methods.balanceOf(StakingPool.address).call();
+      assert.strictEqual(balance, "0");
     });
   })
 
   describe("depositing before contributions", () => {
     before("deposit 11 ETH", async () => {
-      await StakingPool.methods.deposit().send({value: "11000000000000000000", from: jonathan})
+      await StakingPool.methods.deposit("11000000000000000000").send({from: iuri})
     })
 
     it("exchangeRate should remain 1", async function () {
@@ -53,14 +74,14 @@ contract("StakingPool", function () {
     });
 
     it("balance should be 12", async function () {
-      let rate = await web3.eth.getBalance(StakingPool.address);
-      assert.strictEqual(rate, "11000000000000000000");
+      let balance = await SNT.methods.balanceOf(StakingPool.address).call();
+      assert.strictEqual(balance, "11000000000000000000");
     });
   });
 
   describe("2nd person depositing before contributions", () => {
     before("deposit 5 ETH", async () => {
-      await StakingPool.methods.deposit().send({value: "5000000000000000000", from: iuri})
+      await StakingPool.methods.deposit("5000000000000000000").send({from: jonathan})
     })
 
     it("exchangeRate should remain 1", async function () {
@@ -74,14 +95,14 @@ contract("StakingPool", function () {
     });
 
     it("balance should be 17", async function () {
-      let rate = await web3.eth.getBalance(StakingPool.address);
-      assert.strictEqual(rate, "16000000000000000000");
+      let balance = await SNT.methods.balanceOf(StakingPool.address).call();
+      assert.strictEqual(balance, "16000000000000000000");
     });
   });
 
   describe("contributions", () => {
     before("contribute 10 ETH", async () => {
-      await web3.eth.sendTransaction({value: "10000000000000000000", to: StakingPool.address})
+      await SNT.methods.transfer(StakingPool.address, "10000000000000000000").send({from: iuri});
     })
 
     it("exchangeRate should increase", async function () {
@@ -95,8 +116,8 @@ contract("StakingPool", function () {
     });
 
     it("balance should be 27", async function () {
-      let rate = await web3.eth.getBalance(StakingPool.address);
-      assert.strictEqual(rate, "26000000000000000000");
+      let balance = await SNT.methods.balanceOf(StakingPool.address).call();
+      assert.strictEqual(balance, "26000000000000000000");
     });
   });
 
@@ -116,17 +137,17 @@ contract("StakingPool", function () {
     });
 
     it("balance should decrease by correct exchange rate", async function () {
-      let rate = await web3.eth.getBalance(StakingPool.address);
+      let balance = await SNT.methods.balanceOf(StakingPool.address).call();
       // 5000000000000000000 tokens x 1.625 rate
       // => 8125000000000000000 ETH
       // 26000000000000000000 - 8125000000000000000 = 17875000000000000000
-      assert.strictEqual(rate, "17875000000000000000");
+      assert.strictEqual(balance, "17875000000000000000");
     });
   });
 
   describe("depositing after contributions", () => {
     before("deposit 8 ETH", async () => {
-      await StakingPool.methods.deposit().send({value: "8000000000000000000", from: richard})
+      await StakingPool.methods.deposit("8000000000000000000").send({from: richard})
     })
 
     it("exchangeRate should remain the same", async function () {
@@ -140,9 +161,9 @@ contract("StakingPool", function () {
     });
 
     it("balance should increase", async function () {
-      let rate = await web3.eth.getBalance(StakingPool.address);
+      let balance = await SNT.methods.balanceOf(StakingPool.address).call();
       // 17875000000000000000 + 8000000000000000000
-      assert.strictEqual(rate, "25875000000000000000");
+      assert.strictEqual(balance, "25875000000000000000");
     });
   });
 
