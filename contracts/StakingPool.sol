@@ -4,9 +4,10 @@ import "openzeppelin-solidity/contracts/token/ERC20/IERC20.sol";
 import "openzeppelin-solidity/contracts/token/ERC20/ERC20.sol";
 import "openzeppelin-solidity/contracts/token/ERC20/ERC20Detailed.sol";
 import "openzeppelin-solidity/contracts/token/ERC20/ERC20Burnable.sol";
-import "math.sol";
+import "./math.sol";
+import "./token/ApproveAndCallFallBack.sol";
 
-contract StakingPool is ERC20, ERC20Detailed, ERC20Burnable, DSMath {
+contract StakingPool is ERC20, ERC20Detailed, ERC20Burnable, DSMath, ApproveAndCallFallBack {
   uint private INITIAL_SUPPLY = 0;
   IERC20 public token;
 
@@ -25,15 +26,49 @@ contract StakingPool is ERC20, ERC20Detailed, ERC20Burnable, DSMath {
   }
 
   function deposit (uint256 amount) public payable {
+    _deposit(msg.sender, amount);
+  }
+
+  function _deposit(address _from, uint256 amount) internal {
     uint256 equivalentTokens = estimatedTokens(amount);
-    token.transferFrom(msg.sender, address(this), amount);
-    _mint(msg.sender, equivalentTokens);
+    require(token.transferFrom(_from, address(this), amount), "Couldn't transfer");
+    _mint(_from, equivalentTokens);
   }
 
   function withdraw (uint256 amount) public {
     uint256 rate = exchangeRate(0);
     burn(amount);
-    token.transfer(msg.sender, wmul(amount, wdiv(rate, 1000000000000000000)));
+    require(token.transfer(msg.sender, wmul(amount, wdiv(rate, 1000000000000000000))), "Couldn't transfer");
  }
 
+  /**
+   * @notice Support for "approveAndCall". Callable only by `token()`.
+   * @param _from Who approved.
+   * @param _amount Amount being approved,
+   * @param _token Token being approved, need to be equal `token()`.
+   * @param _data Abi encoded data`.
+   */
+  function receiveApproval(address _from, uint256 _amount, address _token, bytes memory _data) public {
+    require(_token == address(token), "Wrong token");
+    require(_token == address(msg.sender), "Wrong call");
+    require(_data.length == 36, "Wrong data length");
+
+    bytes4 sig;
+    uint amount;
+    (sig, amount) = abiDecodeRegister(_data);
+
+    require(amount == _amount, "Amounts mismatch");
+    require(sig == 0xb6b55f25, "Wrong method selector"); // deposit(uint256)
+    _deposit(_from, amount);
+  }
+
+  function abiDecodeRegister(bytes memory _data) private returns(
+    bytes4 sig,
+    uint256 amount
+  ) {
+    assembly {
+      sig := mload(add(_data, add(0x20, 0)))
+      amount := mload(add(_data, 36))
+    }
+  }
 }

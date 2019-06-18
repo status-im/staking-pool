@@ -49,13 +49,26 @@ module.exports = {
     //            when not specified
     // - explicit will only attempt to deploy the contracts that are explicitly specified inside the
     //            contracts section.
-    //strategy: 'implicit',
+    strategy: 'explicit',
 
     contracts: {
-      // example:
-      //SimpleStorage: {
-      //  args: [ 100 ]
-      //}
+      "MiniMeToken": { "deploy": false },
+      "MiniMeTokenFactory": { },
+      "SNT": {
+        "instanceOf": "MiniMeToken",
+        "args": [
+          "$MiniMeTokenFactory",
+          "0x0000000000000000000000000000000000000000",
+          0,
+          "TestMiniMeToken",
+          18,
+          "STT",
+          true
+        ]
+      },
+      "StakingPool": {
+        "args": ["$SNT"]
+      }
     }
   },
 
