@@ -5,9 +5,22 @@
   "scripts": {
     "test": "embark test"
   },
+  "files": [
+    "contracts"
+  ],
   "keywords": [],
-  "author": "",
+  "author": "Iuri Matias <iuri.matias@gmail.com>",
   "license": "MIT",
+  "contributors": [
+    {
+      "name": "Iuri Matias",
+      "email": "iuri.matias@gmail.com"
+    },
+    {
+      "name": "Richard Ramos",
+      "email": "info@richardramos.me"
+    }
+  ],
   "devDependencies": {
     "embarkjs-connector-web3": "^4.1.0-beta.3",
     "embark-solc": "^4.0.2"
