@@ -7,8 +7,24 @@ let iuri, jonathan, richard;
 // For documentation please see https://embark.status.im/docs/contracts_testing.html
 config({
   contracts: {
-    "StakingPool": {args: ["$SNT"]},
-    "SNT": {}
+    "MiniMeToken": { "deploy": false },
+    "MiniMeTokenFactory": { 
+    },
+    "SNT": {
+      "instanceOf": "MiniMeToken",
+      "args": [
+        "$MiniMeTokenFactory",
+        "0x0000000000000000000000000000000000000000",
+        0,
+        "TestMiniMeToken",
+        18,
+        "STT",
+        true
+      ]
+    },
+   "StakingPool": {
+      "args": ["$SNT"]
+    }
   }
 }, (_err, accounts) => {
   iuri = accounts[0];
@@ -23,6 +39,7 @@ contract("StakingPool", function () {
 
   before(async () => {
     // distribute SNT
+    await SNT.methods.generateTokens(iuri, "10000000000000000000000").send({from: iuri});
     await SNT.methods.transfer(jonathan, "1000000000000000000000").send({from: iuri});
     await SNT.methods.transfer(richard, "1000000000000000000000").send({from: iuri});
 
@@ -30,7 +47,7 @@ contract("StakingPool", function () {
     let balance;
     balance = await SNT.methods.balanceOf(iuri).call();
     assert.strictEqual(balance, "8000000000000000000000");
-    await SNT.methods.approve(StakingPool.address, "10000000000000000000000").send({from: iuri});
+    // TODO: we are not approving here because we want to test the approveAndCall functionality
 
     balance = await SNT.methods.balanceOf(jonathan).call();
     assert.strictEqual(balance, "1000000000000000000000");
@@ -60,7 +77,9 @@ contract("StakingPool", function () {
 
   describe("depositing before contributions", () => {
     before("deposit 11 ETH", async () => {
-      await StakingPool.methods.deposit("11000000000000000000").send({from: iuri})
+      // Deposit using approveAndCall
+      const encodedCall = StakingPool.methods.deposit("11000000000000000000").encodeABI();
+      await SNT.methods.approveAndCall(StakingPool.options.address, "11000000000000000000", encodedCall).send({from: iuri});
     })
 
     it("exchangeRate should remain 1", async function () {

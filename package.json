@@ -9,9 +9,11 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "embarkjs-connector-web3": "^4.1.0-beta.3"
+    "embarkjs-connector-web3": "^4.1.0-beta.3",
+    "embark-solc": "^4.0.2"
   },
   "dependencies": {
+    "embark": "^4.0.2",
     "openzeppelin-solidity": "^2.3.0"
   }
 }
