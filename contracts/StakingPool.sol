@@ -26,11 +26,6 @@ contract StakingPool is ERC20, ERC20Detailed, ERC20Burnable, DSMath {
     _mint(msg.sender, estimatedTokens(msg.value));
   }
 
-  function div () public returns (uint256) {
-    uint256 rate = exchangeRate(0);
-    return wdiv(rate, 1000000000000000000);
-  }
-
   function withdraw (uint256 amount) public {
     uint256 rate = exchangeRate(0);
     burn(amount);
