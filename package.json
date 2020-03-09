@@ -21,12 +21,13 @@
       "email": "info@richardramos.me"
     }
   ],
-  "devDependencies": {
-    "embarkjs-connector-web3": "^4.1.0-beta.3",
-    "embark-solc": "^4.0.2"
-  },
   "dependencies": {
-    "embark": "^4.0.2",
+    "embark": "5.2.3",
+    "embark-geth": "5.2.3",
+    "embark-solc": "5.2.3",
+    "embark-solium": "0.1.0",
+    "embarkjs": "5.2.3",
+    "embarkjs-web3": "5.2.3",
     "openzeppelin-solidity": "^2.3.0"
   }
 }
