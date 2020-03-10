@@ -1,40 +1,81 @@
-pragma solidity ^0.5.0;
-
+/* solium-disable security/no-block-members */
+/* solium-disable security/no-inline-assembly */
+pragma solidity >=0.5.0 <0.6.0;
 import "openzeppelin-solidity/contracts/token/ERC20/IERC20.sol";
 import "openzeppelin-solidity/contracts/token/ERC20/ERC20.sol";
 import "openzeppelin-solidity/contracts/token/ERC20/ERC20Detailed.sol";
 import "openzeppelin-solidity/contracts/token/ERC20/ERC20Burnable.sol";
 import "./math.sol";
 import "./token/ApproveAndCallFallBack.sol";
+import "./token/MiniMeTokenInterface.sol";
 
 contract StakingPool is ERC20, ERC20Detailed, ERC20Burnable, DSMath, ApproveAndCallFallBack {
-  uint private INITIAL_SUPPLY = 0;
-  IERC20 public token;
+  uint public MAX_SUPPLY = 0;
 
-  constructor (address tokenAddress) public ERC20Detailed("TellerStatus", "TSNT", 18) {
-    token = IERC20(tokenAddress);
+  MiniMeTokenInterface public token;
+  uint public stakingBlockLimit;
+  uint public blockToCheckBalance;
+
+  /**
+   * @param _tokenAddress SNT token address
+   * @param _stakingPeriodLen Number of block that represents the period when Staking is available
+   */
+  constructor (address _tokenAddress, uint _stakingPeriodLen) public ERC20Detailed("TellerStatus", "TSNT", 18) {
+    token = MiniMeTokenInterface(_tokenAddress);
+    stakingBlockLimit = block.number + _stakingPeriodLen;
+    blockToCheckBalance = block.number;
   }
 
+  /**
+   * @notice Determine exchange rate
+   * @return Exchange rate
+   */
   function exchangeRate (uint256 excludeAmount) public view returns (uint256) {
     if (totalSupply() == 0) return 1000000000000000000;
     return wdiv(token.balanceOf(address(this)), totalSupply());
   }
 
-  function estimatedTokens(uint256 value) public view returns (uint256) {
-    uint256 rate = exchangeRate(value);
-    return wdiv(value, wdiv(rate, 1000000000000000000));
+  /**
+   * @notice Estimate the number of tokens that will be minted based on an amount of SNT
+   * @param _value Amount of SNT used in calculation
+   */
+  function estimatedTokens(uint256 _value) public view returns (uint256) {
+    uint256 rate = exchangeRate(_value);
+    return wdiv(_value, wdiv(rate, 1000000000000000000));
   }
 
-  function deposit (uint256 amount) public payable {
-    _deposit(msg.sender, amount);
+  /**
+   * @notice Stake SNT in the pool and receive tSNT. During the stake period you can stake up to the amount of SNT you had when the pool was created. Afterwards, the amount you can stake can not exceed MAXSUPPLY - TOTALSUPPLY
+   * @dev Use this function with approveAndCall, since it requires a SNT transfer
+   * @param _amount Amount to stake
+   */
+  function stake(uint256 _amount) public payable {
+    if(block.number <= stakingBlockLimit){
+      uint maxBalance = token.balanceOfAt(msg.sender, blockToCheckBalance);
+      require(_amount <= maxBalance, "Stake amount exceeds SNT balance at pool creation");
+    } else {
+      if(MAX_SUPPLY == 0) MAX_SUPPLY = totalSupply();
+      uint maxAmountToStake = MAX_SUPPLY - totalSupply();
+      require(_amount <= maxAmountToStake, "Max stake amount exceeded");
+    }
+    _stake(msg.sender, _amount);
   }
 
-  function _deposit(address _from, uint256 amount) internal {
-    uint256 equivalentTokens = estimatedTokens(amount);
-    require(token.transferFrom(_from, address(this), amount), "Couldn't transfer");
+  /**
+   * @dev Stake SNT in the contract, and receive tSNT
+   * @param _from Address transfering the SNT
+   * @param _amount Amount being staked
+   */
+  function _stake(address _from, uint256 _amount) internal {
+    uint256 equivalentTokens = estimatedTokens(_amount);
+    require(token.transferFrom(_from, address(this), _amount), "Couldn't transfer");
     _mint(_from, equivalentTokens);
   }
 
+  /**
+   * @notice Withdraw SNT from Staking Pool, by burning tSNT
+   * @param amount Amount to withdraw
+   */
   function withdraw (uint256 amount) public {
     uint256 rate = exchangeRate(0);
     burn(amount);
@@ -46,7 +87,7 @@ contract StakingPool is ERC20, ERC20Detailed, ERC20Burnable, DSMath, ApproveAndC
    * @param _from Who approved.
    * @param _amount Amount being approved,
    * @param _token Token being approved, need to be equal `token()`.
-   * @param _data Abi encoded data`.
+   * @param _data ABI encoded data`.
    */
   function receiveApproval(address _from, uint256 _amount, address _token, bytes memory _data) public {
     require(_token == address(token), "Wrong token");
@@ -55,14 +96,18 @@ contract StakingPool is ERC20, ERC20Detailed, ERC20Burnable, DSMath, ApproveAndC
 
     bytes4 sig;
     uint amount;
-    (sig, amount) = abiDecodeRegister(_data);
+    (sig, amount) = abiDecode(_data);
 
     require(amount == _amount, "Amounts mismatch");
-    require(sig == 0xb6b55f25, "Wrong method selector"); // deposit(uint256)
-    _deposit(_from, amount);
+    require(sig == 0xa694fc3a, "Wrong method selector"); // stake(uint256)
+    _stake(_from, amount);
   }
 
-  function abiDecodeRegister(bytes memory _data) private returns(
+  /**
+   * @dev Decode calldata - stake(uint256)
+   * @param _data Calldata, ABI encoded
+   */
+  function abiDecode(bytes memory _data) internal returns(
     bytes4 sig,
     uint256 amount
   ) {

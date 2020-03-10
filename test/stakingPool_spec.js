@@ -24,6 +24,7 @@ config({
           ]
         },
         "StakingPool": {
+          "deploy": false,
           "args": ["$SNT"]
         }
       }
@@ -32,6 +33,7 @@ config({
   iuri = accounts[0];
   jonathan = accounts[1];
   richard = accounts[2];
+  pascal = accounts[3];
 });
 
 // TODO: add asserts for balances
@@ -44,6 +46,11 @@ contract("StakingPool", function () {
     await SNT.methods.generateTokens(iuri, "10000000000000000000000").send({from: iuri});
     await SNT.methods.transfer(jonathan, "1000000000000000000000").send({from: iuri});
     await SNT.methods.transfer(richard, "1000000000000000000000").send({from: iuri});
+  
+    await SNT.methods.generateTokens(pascal, "1000000000000000000").send({from: iuri});
+
+    // Deploy Staking Pool
+    StakingPool = await StakingPool.deploy({ arguments: [SNT.options.address, 100] }).send();
 
     // approve StakingPool to transfer tokens
     let balance;
@@ -53,11 +60,13 @@ contract("StakingPool", function () {
 
     balance = await SNT.methods.balanceOf(jonathan).call();
     assert.strictEqual(balance, "1000000000000000000000");
-    await SNT.methods.approve(StakingPool.address, "10000000000000000000000").send({from: jonathan});
+    await SNT.methods.approve(StakingPool.options.address, "10000000000000000000000").send({from: jonathan});
 
     balance = await SNT.methods.balanceOf(richard).call();
     assert.strictEqual(balance, "1000000000000000000000");
-    await SNT.methods.approve(StakingPool.address, "10000000000000000000000").send({from: richard});
+    await SNT.methods.approve(StakingPool.options.address, "10000000000000000000000").send({from: richard});
+
+    
   })
 
   describe("initial state", () => {
@@ -72,7 +81,7 @@ contract("StakingPool", function () {
     });
 
     it("initial balance should be 0", async function () {
-      let balance = await SNT.methods.balanceOf(StakingPool.address).call();
+      let balance = await SNT.methods.balanceOf(StakingPool.options.address).call();
       assert.strictEqual(balance, "0");
     });
   })
@@ -80,7 +89,7 @@ contract("StakingPool", function () {
   describe("depositing before contributions", () => {
     before("deposit 11 ETH", async () => {
       // Deposit using approveAndCall
-      const encodedCall = StakingPool.methods.deposit("11000000000000000000").encodeABI();
+      const encodedCall = StakingPool.methods.stake("11000000000000000000").encodeABI();
       await SNT.methods.approveAndCall(StakingPool.options.address, "11000000000000000000", encodedCall).send({from: iuri});
     })
 
@@ -95,14 +104,14 @@ contract("StakingPool", function () {
     });
 
     it("balance should be 12", async function () {
-      let balance = await SNT.methods.balanceOf(StakingPool.address).call();
+      let balance = await SNT.methods.balanceOf(StakingPool.options.address).call();
       assert.strictEqual(balance, "11000000000000000000");
     });
   });
 
   describe("2nd person depositing before contributions", () => {
     before("deposit 5 ETH", async () => {
-      await StakingPool.methods.deposit("5000000000000000000").send({from: jonathan})
+      await StakingPool.methods.stake("5000000000000000000").send({from: jonathan})
     })
 
     it("exchangeRate should remain 1", async function () {
@@ -116,14 +125,14 @@ contract("StakingPool", function () {
     });
 
     it("balance should be 17", async function () {
-      let balance = await SNT.methods.balanceOf(StakingPool.address).call();
+      let balance = await SNT.methods.balanceOf(StakingPool.options.address).call();
       assert.strictEqual(balance, "16000000000000000000");
     });
   });
 
   describe("contributions", () => {
     before("contribute 10 ETH", async () => {
-      await SNT.methods.transfer(StakingPool.address, "10000000000000000000").send({from: iuri});
+      await SNT.methods.transfer(StakingPool.options.address, "10000000000000000000").send({from: iuri});
     })
 
     it("exchangeRate should increase", async function () {
@@ -137,7 +146,7 @@ contract("StakingPool", function () {
     });
 
     it("balance should be 27", async function () {
-      let balance = await SNT.methods.balanceOf(StakingPool.address).call();
+      let balance = await SNT.methods.balanceOf(StakingPool.options.address).call();
       assert.strictEqual(balance, "26000000000000000000");
     });
   });
@@ -158,7 +167,7 @@ contract("StakingPool", function () {
     });
 
     it("balance should decrease by correct exchange rate", async function () {
-      let balance = await SNT.methods.balanceOf(StakingPool.address).call();
+      let balance = await SNT.methods.balanceOf(StakingPool.options.address).call();
       // 5000000000000000000 tokens x 1.625 rate
       // => 8125000000000000000 ETH
       // 26000000000000000000 - 8125000000000000000 = 17875000000000000000
@@ -168,7 +177,7 @@ contract("StakingPool", function () {
 
   describe("depositing after contributions", () => {
     before("deposit 8 ETH", async () => {
-      await StakingPool.methods.deposit("8000000000000000000").send({from: richard})
+      await StakingPool.methods.stake("8000000000000000000").send({from: richard})
     })
 
     it("exchangeRate should remain the same", async function () {
@@ -182,10 +191,22 @@ contract("StakingPool", function () {
     });
 
     it("balance should increase", async function () {
-      let balance = await SNT.methods.balanceOf(StakingPool.address).call();
+      let balance = await SNT.methods.balanceOf(StakingPool.options.address).call();
       // 17875000000000000000 + 8000000000000000000
       assert.strictEqual(balance, "25875000000000000000");
     });
   });
+
+  describe("Checking stake conditions", () => {
+
+    it("should not allow stakeing more than the balance had at the moment of staking pool deployment", async () => {
+      await SNT.methods.transfer(pascal, "1000000000000000000").send({from: iuri}); // Pascal now has 2 eth
+      await SNT.methods.approve(StakingPool.options.address, "2000000000000000000").send({from: pascal});
+      const encodedCall = StakingPool.methods.stake("2000000000000000000").encodeABI();
+      await assert.reverts(SNT.methods.approveAndCall(StakingPool.options.address, "2000000000000000000", encodedCall), {from: pascal}, "A");
+    console.log(assert);
+    })
+
+  })
 
 });
