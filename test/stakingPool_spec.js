@@ -1,30 +1,32 @@
-// /*global contract, config, it, assert*/
-const StakingPool = require('Embark/contracts/StakingPool');
-const SNT = require('Embark/contracts/SNT');
+// /*global contract, config, it, assert, artifacts*/
+const StakingPool = artifacts.require('StakingPool');
+const SNT = artifacts.require('SNT');
 
 let iuri, jonathan, richard;
 
 // For documentation please see https://embark.status.im/docs/contracts_testing.html
 config({
   contracts: {
-    "MiniMeToken": { "deploy": false },
-    "MiniMeTokenFactory": { 
-    },
-    "SNT": {
-      "instanceOf": "MiniMeToken",
-      "args": [
-        "$MiniMeTokenFactory",
-        "0x0000000000000000000000000000000000000000",
-        0,
-        "TestMiniMeToken",
-        18,
-        "STT",
-        true
-      ]
-    },
-   "StakingPool": {
-      "args": ["$SNT"]
-    }
+    deploy:
+      {
+        "MiniMeToken": {"deploy": false},
+        "MiniMeTokenFactory": {},
+        "SNT": {
+          "instanceOf": "MiniMeToken",
+          "args": [
+            "$MiniMeTokenFactory",
+            "0x0000000000000000000000000000000000000000",
+            0,
+            "TestMiniMeToken",
+            18,
+            "STT",
+            true
+          ]
+        },
+        "StakingPool": {
+          "args": ["$SNT"]
+        }
+      }
   }
 }, (_err, accounts) => {
   iuri = accounts[0];

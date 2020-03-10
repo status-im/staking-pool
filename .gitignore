@@ -7,3 +7,4 @@ dist
 embarkArtifacts
 node_modules
 TODO
+.idea
