@@ -45,6 +45,15 @@ contract StakingPool is ERC20, ERC20Detailed, ERC20Burnable, DSMath, ApproveAndC
   }
 
   /**
+   * @notice Determine max amount that can be staked
+   * @return Max amount to stake
+   */
+
+  function maxAmountToStake() public view returns (uint256) {
+    return MAX_SUPPLY - totalSupply();
+  }
+
+  /**
    * @notice Stake SNT in the pool and receive tSNT. During the stake period you can stake up to the amount of SNT you had when the pool was created. Afterwards, the amount you can stake can not exceed MAXSUPPLY - TOTALSUPPLY
    * @dev Use this function with approveAndCall, since it requires a SNT transfer
    * @param _amount Amount to stake
@@ -53,12 +62,13 @@ contract StakingPool is ERC20, ERC20Detailed, ERC20Burnable, DSMath, ApproveAndC
     if(block.number <= stakingBlockLimit){
       uint maxBalance = token.balanceOfAt(msg.sender, blockToCheckBalance);
       require(_amount <= maxBalance, "Stake amount exceeds SNT balance at pool creation");
+      _stake(msg.sender, _amount);
+      MAX_SUPPLY = totalSupply();
     } else {
-      if(MAX_SUPPLY == 0) MAX_SUPPLY = totalSupply();
       uint maxAmountToStake = MAX_SUPPLY - totalSupply();
       require(_amount <= maxAmountToStake, "Max stake amount exceeded");
+      _stake(msg.sender, _amount);
     }
-    _stake(msg.sender, _amount);
   }
 
   /**
@@ -66,8 +76,8 @@ contract StakingPool is ERC20, ERC20Detailed, ERC20Burnable, DSMath, ApproveAndC
    * @param _from Address transfering the SNT
    * @param _amount Amount being staked
    */
-  function _stake(address _from, uint256 _amount) internal {
-    uint256 equivalentTokens = estimatedTokens(_amount);
+  function _stake(address _from, uint256 _amount) internal returns (uint equivalentTokens){
+    equivalentTokens = estimatedTokens(_amount);
     require(token.transferFrom(_from, address(this), _amount), "Couldn't transfer");
     _mint(_from, equivalentTokens);
   }
@@ -79,6 +89,11 @@ contract StakingPool is ERC20, ERC20Detailed, ERC20Burnable, DSMath, ApproveAndC
   function withdraw (uint256 amount) public {
     uint256 rate = exchangeRate(0);
     burn(amount);
+
+    if(block.number <= stakingBlockLimit){
+     MAX_SUPPLY = totalSupply(); 
+    }
+
     require(token.transfer(msg.sender, wmul(amount, wdiv(rate, 1000000000000000000))), "Couldn't transfer");
  }
 

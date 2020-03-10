@@ -1,5 +1,5 @@
 // /*global contract, config, it, assert, artifacts*/
-const StakingPool = artifacts.require('StakingPool');
+let StakingPool = artifacts.require('StakingPool');
 const SNT = artifacts.require('SNT');
 
 let iuri, jonathan, richard;
@@ -34,6 +34,8 @@ config({
   jonathan = accounts[1];
   richard = accounts[2];
   pascal = accounts[3];
+  michael = accounts[4];
+  eric = accounts[5];
 });
 
 // TODO: add asserts for balances
@@ -48,6 +50,7 @@ contract("StakingPool", function () {
     await SNT.methods.transfer(richard, "1000000000000000000000").send({from: iuri});
   
     await SNT.methods.generateTokens(pascal, "1000000000000000000").send({from: iuri});
+    await SNT.methods.generateTokens(michael, "1000000000000000000").send({from: iuri});
 
     // Deploy Staking Pool
     StakingPool = await StakingPool.deploy({ arguments: [SNT.options.address, 100] }).send();
@@ -202,11 +205,29 @@ contract("StakingPool", function () {
     it("should not allow stakeing more than the balance had at the moment of staking pool deployment", async () => {
       await SNT.methods.transfer(pascal, "1000000000000000000").send({from: iuri}); // Pascal now has 2 eth
       await SNT.methods.approve(StakingPool.options.address, "2000000000000000000").send({from: pascal});
-      const encodedCall = StakingPool.methods.stake("2000000000000000000").encodeABI();
-      await assert.reverts(SNT.methods.approveAndCall(StakingPool.options.address, "2000000000000000000", encodedCall), {from: pascal}, "A");
-    console.log(assert);
-    })
+      await assert.reverts(StakingPool.methods.stake("2000000000000000000"), {from: pascal}, "Returned error: VM Exception while processing transaction: revert Stake amount exceeds SNT balance at pool creation");
+      await StakingPool.methods.stake("1000000000000000000").send({from: pascal});
+    });
 
-  })
+    it("should allow stake only after a pool user withdraws", async () => {
+      // Mine 100 blocks
+      for(let i = 0; i < 100; i++){
+        await mineAtTimestamp(12345678);
+      }
+
+      await SNT.methods.approve(StakingPool.options.address, "1000000000000000000").send({from: michael});
+      await assert.reverts(StakingPool.methods.stake("1000000000000000000"), {from: michael}, "Returned error: VM Exception while processing transaction: revert Max stake amount exceeded");
+
+      assert.strictEqual(await StakingPool.methods.maxAmountToStake().call(), "0");
+
+      await StakingPool.methods.withdraw("1000000000000000000").send({from: richard})
+
+      assert.strictEqual(await StakingPool.methods.maxAmountToStake().call(), "1000000000000000000");
+
+      await SNT.methods.transfer(eric, "1000000000000000000").send({from: michael});
+      await SNT.methods.approve(StakingPool.options.address, "1000000000000000000").send({from: eric});
+      await StakingPool.methods.stake("1000000000000000000").send({from: eric});
+    });
+  });
 
 });
