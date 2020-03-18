@@ -64,8 +64,7 @@ contract StakingPool is ERC20, ERC20Detailed, ERC20Burnable, DSMath, ApproveAndC
       _stake(msg.sender, _amount);
       MAX_SUPPLY = totalSupply();
     } else {
-      uint maxAmountToStake = MAX_SUPPLY - totalSupply();
-      require(_amount <= maxAmountToStake, "Max stake amount exceeded");
+      require(_amount <= (MAX_SUPPLY - totalSupply()), "Max stake amount exceeded");
       _stake(msg.sender, _amount);
     }
   }

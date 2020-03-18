@@ -4,9 +4,10 @@
 pragma solidity >=0.5.0 <0.6.0;
 
 import "./StakingPool.sol";
+import "./common/Controlled.sol";
 import "openzeppelin-solidity/contracts/drafts/ERC20Snapshot.sol";
 
-contract StakingPoolDAO is StakingPool, ERC20Snapshot {
+contract StakingPoolDAO is StakingPool, ERC20Snapshot, Controlled {
 
   enum VoteStatus {NONE, YES, NO}
 
@@ -34,6 +35,11 @@ contract StakingPoolDAO is StakingPool, ERC20Snapshot {
   event Vote(uint indexed proposalId, address indexed voter, VoteStatus indexed choice);
   event Execution(uint indexed proposalId);
   event ExecutionFailure(uint indexed proposalId);
+
+  constructor (address _tokenAddress, uint _stakingPeriodLen) public
+    StakingPool(_tokenAddress, _stakingPeriodLen) {
+      changeController(address(uint160(address(this))));
+  }
 
   /// @dev Adds a new proposal
   /// @param destination Transaction target address.
@@ -68,10 +74,13 @@ contract StakingPoolDAO is StakingPool, ERC20Snapshot {
   function vote(uint proposalId, bool choice) external {
     Proposal storage proposal = proposals[proposalId];
 
-    require(proposal.dateLimit > block.timestamp, "Proposal has already ended");
+    require(proposal.dateLimit > block.number, "Proposal has already ended");
 
     VoteStatus vote = choice ? VoteStatus.YES : VoteStatus.NO;
     uint voterBalance = balanceOfAt(msg.sender, proposal.snapshotId);
+
+    require(voterBalance > 0, "Not enough tokens at the moment of proposal creation");
+
     VoteStatus oldVote = proposal.voters[msg.sender];
 
     if(oldVote != VoteStatus.NONE){ // Reset
