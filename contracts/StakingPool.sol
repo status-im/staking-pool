@@ -120,7 +120,7 @@ contract StakingPool is ERC20, ERC20Detailed, ERC20Burnable, DSMath, ApproveAndC
    * @dev Decode calldata - stake(uint256)
    * @param _data Calldata, ABI encoded
    */
-  function abiDecode(bytes memory _data) internal returns(
+  function abiDecode(bytes memory _data) internal pure returns (
     bytes4 sig,
     uint256 amount
   ) {

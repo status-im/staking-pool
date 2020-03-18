@@ -16,7 +16,7 @@ contract StakingPoolDAO is StakingPool, ERC20Snapshot, Controlled {
     uint value;
     bool executed;
     uint snapshotId;
-    uint dateLimit;
+    uint voteEndingBlock;
     bytes data;
     bytes details; // Store proposal information here
 
@@ -27,8 +27,8 @@ contract StakingPoolDAO is StakingPool, ERC20Snapshot, Controlled {
   uint public proposalCount;
   mapping(uint => Proposal) public proposals;
 
-  uint public proposalVoteLength = 13290; // ~2d.  Voting available during this period
-  uint public proposalExpiration = 6640; // ~1d. Proposals should be executed up to 1 day after they have ended
+  uint public proposalVoteLength; // Voting available during this period
+  uint public proposalExpirationLength; // Proposals should be executed up to 1 day after they have ended
 
 
   event NewProposal(uint indexed proposalId);
@@ -36,9 +36,19 @@ contract StakingPoolDAO is StakingPool, ERC20Snapshot, Controlled {
   event Execution(uint indexed proposalId);
   event ExecutionFailure(uint indexed proposalId);
 
-  constructor (address _tokenAddress, uint _stakingPeriodLen) public
+  constructor (address _tokenAddress, uint _stakingPeriodLen, uint _proposalVoteLength, uint _proposalExpirationLength) public
     StakingPool(_tokenAddress, _stakingPeriodLen) {
       changeController(address(uint160(address(this))));
+      proposalVoteLength = _proposalVoteLength;
+      proposalExpirationLength = _proposalExpirationLength;
+  }
+
+  function setProposalVoteLength(uint _newProposalVoteLength) public onlyController {
+    proposalVoteLength = _newProposalVoteLength;
+  }
+
+  function setproposalExpirationLength(uint _newProposalExpirationLength) public onlyController {
+    proposalExpirationLength = _newProposalExpirationLength;
   }
 
   /// @dev Adds a new proposal
@@ -63,7 +73,7 @@ contract StakingPoolDAO is StakingPool, ERC20Snapshot, Controlled {
         executed: false,
         snapshotId: snapshot(),
         details: details,
-        dateLimit: block.number + proposalVoteLength
+        voteEndingBlock: block.number + proposalVoteLength
     });
 
     proposalCount++;
@@ -74,23 +84,24 @@ contract StakingPoolDAO is StakingPool, ERC20Snapshot, Controlled {
   function vote(uint proposalId, bool choice) external {
     Proposal storage proposal = proposals[proposalId];
 
-    require(proposal.dateLimit > block.number, "Proposal has already ended");
+    require(proposal.voteEndingBlock > block.number, "Proposal has already ended");
 
-    VoteStatus vote = choice ? VoteStatus.YES : VoteStatus.NO;
     uint voterBalance = balanceOfAt(msg.sender, proposal.snapshotId);
-
     require(voterBalance > 0, "Not enough tokens at the moment of proposal creation");
 
     VoteStatus oldVote = proposal.voters[msg.sender];
 
     if(oldVote != VoteStatus.NONE){ // Reset
-      proposal.votes[choice] -= voterBalance;
+      bool oldChoice = oldVote == VoteStatus.YES ? true : false;
+      proposal.votes[oldChoice] -= voterBalance;
     }
 
-    proposal.votes[choice] += voterBalance;
-    proposal.voters[msg.sender] = vote;
+    VoteStatus enumVote = choice ? VoteStatus.YES : VoteStatus.NO;
 
-    emit Vote(proposalId, msg.sender, vote);
+    proposal.votes[choice] += voterBalance;
+    proposal.voters[msg.sender] = enumVote;
+
+    emit Vote(proposalId, msg.sender, enumVote);
   }
 
   // call has been separated into its own function in order to take advantage
@@ -121,8 +132,8 @@ contract StakingPoolDAO is StakingPool, ERC20Snapshot, Controlled {
     Proposal storage proposal = proposals[proposalId];
 
     require(proposal.executed == false, "Proposal already executed");
-    require(block.number > proposal.dateLimit, "Voting is still active");
-    require(block.number <= proposal.dateLimit + proposalExpiration, "Proposal is already expired");
+    require(block.number > proposal.voteEndingBlock, "Voting is still active");
+    require(block.number <= proposal.voteEndingBlock + proposalExpirationLength, "Proposal is already expired");
     require(proposal.votes[true] > proposal.votes[false], "Proposal wasn't approved");
 
     proposal.executed = true;
@@ -130,5 +141,27 @@ contract StakingPoolDAO is StakingPool, ERC20Snapshot, Controlled {
     bool result = external_call(proposal.destination, proposal.value, proposal.data.length, proposal.data);
     require(result, "Execution Failed");
     emit Execution(proposalId);
+  }
+
+  function votes(uint proposalId, bool choice) public view returns (uint) {
+    return proposals[proposalId].votes[choice];
+  }
+
+  function voteOf(address account, uint proposalId) public view returns (VoteStatus) {
+    return proposals[proposalId].voters[account];
+  }
+
+  function isProposalApproved(uint proposalId) public view returns (bool approved, bool executed){
+    Proposal storage proposal = proposals[proposalId];
+    if(block.number <= proposal.voteEndingBlock) {
+      approved = false;
+    } else {
+      approved = proposal.votes[true] > proposal.votes[false];
+    }
+    executed = proposal.executed;
+  }
+
+  function() external payable {
+    //
   }
 }
