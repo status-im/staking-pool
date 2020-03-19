@@ -67,8 +67,6 @@ contract("StakingPoolDAO", function () {
 
     await web3.eth.sendTransaction({from: iuri, to: StakingPool.options.address, value: "100000000000000000"});
 
-
-
     await SNT.methods.approveAndCall(StakingPool.options.address, "10000000000", encodedCall).send({from: iuri});
     await SNT.methods.approveAndCall(StakingPool.options.address, "10000000000", encodedCall).send({from: jonathan});
     await SNT.methods.approveAndCall(StakingPool.options.address, "10000000000", encodedCall).send({from: richard});
