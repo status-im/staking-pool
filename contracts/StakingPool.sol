@@ -48,7 +48,6 @@ contract StakingPool is ERC20, ERC20Detailed, ERC20Burnable, DSMath, ApproveAndC
    * @notice Determine max amount that can be staked
    * @return Max amount to stake
    */
-
   function maxAmountToStake() public view returns (uint256) {
     return MAX_SUPPLY - totalSupply();
   }
