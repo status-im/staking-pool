@@ -20,7 +20,7 @@ contract StakingPool is ERC20, ERC20Detailed, ERC20Burnable, DSMath, ApproveAndC
    * @param _tokenAddress SNT token address
    * @param _stakingPeriodLen Number of block that represents the period when Staking is available
    */
-  constructor (address _tokenAddress, uint _stakingPeriodLen) public ERC20Detailed("TellerStatus", "TSNT", 18) {
+  constructor (address _tokenAddress, uint _stakingPeriodLen) public ERC20Detailed("Status Stake Token", "SST", 18) {
     token = MiniMeTokenInterface(_tokenAddress);
     stakingBlockLimit = block.number + _stakingPeriodLen;
     blockToCheckBalance = block.number;
