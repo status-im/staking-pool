@@ -7,6 +7,7 @@ import "./StakingPool.sol";
 import "./common/Controlled.sol";
 import "@openzeppelin/contracts/drafts/ERC20Snapshot.sol";
 import "@openzeppelin/contracts/GSN/GSNRecipient.sol";
+import "@openzeppelin/contracts/GSN/IRelayHub.sol";
 
 contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled {
 
@@ -246,4 +247,15 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
 
   function _postRelayedCall(bytes memory context, bool, uint256 actualCharge, bytes32) internal {
   }
+
+  function withdraw() external onlyController {
+    IRelayHub rh = IRelayHub(getHubAddr());
+    uint balance = rh.balanceOf(address(this));
+    _withdrawDeposits(balance, msg.sender);
+  }
+
+  function setRelayHubAddress(address _relayHub) external onlyController {
+    _upgradeRelayHub(_relayHub);
+  }
+
 }
