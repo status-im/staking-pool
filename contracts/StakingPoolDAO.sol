@@ -40,7 +40,6 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
 
   constructor (address _tokenAddress, uint _stakingPeriodLen, uint _proposalVoteLength, uint _proposalExpirationLength, uint _minimumParticipation) public
     StakingPool(_tokenAddress, _stakingPeriodLen) {
-      changeController(address(uint160(address(this))));
       proposalVoteLength = _proposalVoteLength;
       proposalExpirationLength = _proposalExpirationLength;
       minimumParticipation = _minimumParticipation;
@@ -147,7 +146,7 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
     require(block.number <= proposal.voteEndingBlock + proposalExpirationLength, "Proposal is already expired");
     require(proposal.votes[true] > proposal.votes[false], "Proposal wasn't approved");
 
-    uint totalParticipation = ((proposal.votes[true] + proposal.votes[false]) * 100) / totalSupply();
+    uint totalParticipation = ((proposal.votes[true] + proposal.votes[false]) * 10000) / totalSupply();
     require(totalParticipation >= minimumParticipation, "Did not meet the minimum required participation");
 
 
