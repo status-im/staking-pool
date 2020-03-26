@@ -30,26 +30,32 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
 
   uint public proposalVoteLength; // Voting available during this period
   uint public proposalExpirationLength; // Proposals should be executed up to 1 day after they have ended
-
+  
+  uint public minimumParticipation;  // Minimum participation percentage with 2 decimals 10000 == 100.00
 
   event NewProposal(uint indexed proposalId);
   event Vote(uint indexed proposalId, address indexed voter, VoteStatus indexed choice);
   event Execution(uint indexed proposalId);
   event ExecutionFailure(uint indexed proposalId);
 
-  constructor (address _tokenAddress, uint _stakingPeriodLen, uint _proposalVoteLength, uint _proposalExpirationLength) public
+  constructor (address _tokenAddress, uint _stakingPeriodLen, uint _proposalVoteLength, uint _proposalExpirationLength, uint _minimumParticipation) public
     StakingPool(_tokenAddress, _stakingPeriodLen) {
       changeController(address(uint160(address(this))));
       proposalVoteLength = _proposalVoteLength;
       proposalExpirationLength = _proposalExpirationLength;
+      minimumParticipation = _minimumParticipation;
   }
 
   function setProposalVoteLength(uint _newProposalVoteLength) public onlyController {
     proposalVoteLength = _newProposalVoteLength;
   }
 
-  function setproposalExpirationLength(uint _newProposalExpirationLength) public onlyController {
+  function setProposalExpirationLength(uint _newProposalExpirationLength) public onlyController {
     proposalExpirationLength = _newProposalExpirationLength;
+  }
+
+  function setMinimumParticipation(uint _newMinimumParticipation) public onlyController {
+    minimumParticipation = _newMinimumParticipation;
   }
 
   /// @dev Adds a new proposal
@@ -140,6 +146,10 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
     require(block.number > proposal.voteEndingBlock, "Voting is still active");
     require(block.number <= proposal.voteEndingBlock + proposalExpirationLength, "Proposal is already expired");
     require(proposal.votes[true] > proposal.votes[false], "Proposal wasn't approved");
+
+    uint totalParticipation = ((proposal.votes[true] + proposal.votes[false]) * 100) / totalSupply();
+    require(totalParticipation >= minimumParticipation, "Did not meet the minimum required participation");
+
 
     proposal.executed = true;
 
