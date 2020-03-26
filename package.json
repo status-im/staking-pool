@@ -22,12 +22,13 @@
     }
   ],
   "dependencies": {
+    "@openzeppelin/contracts": "^2.5.0",
+    "@openzeppelin/gsn-helpers": "^0.2.3",
     "embark": "5.2.3",
     "embark-geth": "5.2.3",
     "embark-solc": "5.2.3",
     "embark-solium": "0.1.0",
     "embarkjs": "5.2.3",
-    "embarkjs-web3": "5.2.3",
-    "openzeppelin-solidity": "^2.5.0"
+    "embarkjs-web3": "5.2.3"
   }
 }
