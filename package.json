@@ -28,6 +28,6 @@
     "embark-solium": "0.1.0",
     "embarkjs": "5.2.3",
     "embarkjs-web3": "5.2.3",
-    "openzeppelin-solidity": "^2.3.0"
+    "openzeppelin-solidity": "^2.5.0"
   }
 }

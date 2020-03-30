@@ -64,8 +64,7 @@ contract StakingPool is ERC20, ERC20Detailed, ERC20Burnable, DSMath, ApproveAndC
       _stake(msg.sender, _amount);
       MAX_SUPPLY = totalSupply();
     } else {
-      uint maxAmountToStake = MAX_SUPPLY - totalSupply();
-      require(_amount <= maxAmountToStake, "Max stake amount exceeded");
+      require(_amount <= (MAX_SUPPLY - totalSupply()), "Max stake amount exceeded");
       _stake(msg.sender, _amount);
     }
   }
@@ -121,7 +120,7 @@ contract StakingPool is ERC20, ERC20Detailed, ERC20Burnable, DSMath, ApproveAndC
    * @dev Decode calldata - stake(uint256)
    * @param _data Calldata, ABI encoded
    */
-  function abiDecode(bytes memory _data) internal returns(
+  function abiDecode(bytes memory _data) internal pure returns (
     bytes4 sig,
     uint256 amount
   ) {
