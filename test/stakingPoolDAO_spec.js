@@ -62,7 +62,7 @@ contract("StakingPoolDAO", function () {
 
 
     // Deploy Staking Pool
-    StakingPool = await StakingPoolDAO.deploy({ arguments: [SNT.options.address, 100, 20, 10] }).send();
+    StakingPool = await StakingPoolDAO.deploy({ arguments: [SNT.options.address, 100, 20, 10, 0] }).send();
     const encodedCall = StakingPool.methods.stake("10000000000").encodeABI();
 
     await web3.eth.sendTransaction({from: iuri, to: StakingPool.options.address, value: "100000000000000000"});
@@ -267,6 +267,56 @@ contract("StakingPoolDAO", function () {
       const finalBalance = await SNT.methods.balanceOf("0xAA000000000000000000000000000000000000AA").call();
       assert.strictEqual(finalBalance, "12345");
     });
-  })
 
+    it("set minimum participation", async () => {
+      // Change minimum participation
+      const encodedCall = StakingPool.methods.setMinimumParticipation("5000").encodeABI();
+      const receipt = await StakingPool.methods.addProposal(StakingPool.options.address, 0, encodedCall, "0x").send({from: richard});
+      proposalId = receipt.events.NewProposal.returnValues.proposalId;
+
+      await StakingPool.methods.vote(proposalId, true).send({from: richard});
+
+      // Mine 20 blocks
+      for(let i = 0; i < 20; i++){
+        await mineAtTimestamp(12345678);
+      }
+
+      await StakingPool.methods.executeTransaction(proposalId).send({from: iuri});
+
+      const minimumParticipation = await StakingPool.methods.minimumParticipation().call();
+      assert.strictEqual(minimumParticipation, "5000");
+    });
+
+    it("requires a minimum participation to execute a proposal", async () => {
+      const encodedCall = SNT.methods.transfer("0xAA000000000000000000000000000000000000BB", "12345").encodeABI();
+      const receipt = await StakingPool.methods.addProposal(SNT.options.address, 0, encodedCall, "0x").send({from: richard});
+      proposalId = receipt.events.NewProposal.returnValues.proposalId;
+
+      await StakingPool.methods.vote(proposalId, true).send({from: richard});
+
+      // Mine 20 blocks
+      for(let i = 0; i < 20; i++){
+        await mineAtTimestamp(12345678);
+      }
+
+      await assert.reverts(StakingPool.methods.executeTransaction(proposalId), {from: iuri}, "Returned error: VM Exception while processing transaction: revert Did not meet the minimum required participation");
+    });
+
+    it("proposal can be executed if it meets the minimum participation", async () => {
+      const encodedCall = SNT.methods.transfer("0xAA000000000000000000000000000000000000BB", "12345").encodeABI();
+      const receipt = await StakingPool.methods.addProposal(SNT.options.address, 0, encodedCall, "0x").send({from: richard});
+      proposalId = receipt.events.NewProposal.returnValues.proposalId;
+
+      await StakingPool.methods.vote(proposalId, true).send({from: iuri});
+      await StakingPool.methods.vote(proposalId, true).send({from: richard});
+      await StakingPool.methods.vote(proposalId, true).send({from: pascal});
+
+      // Mine 20 blocks
+      for(let i = 0; i < 20; i++){
+        await mineAtTimestamp(12345678);
+      }
+
+      await StakingPool.methods.executeTransaction(proposalId).send({from: iuri});
+    });
+  });
 });
