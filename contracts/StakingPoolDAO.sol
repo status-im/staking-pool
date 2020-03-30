@@ -255,20 +255,13 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
     require(proposal.executed == false, "Proposal already executed");
     require(block.number > proposal.voteEndingBlock + proposalCancelLength, "Voting is still active");
     require(block.number <= proposal.voteEndingBlock + proposalCancelLength + proposalExpirationLength, "Proposal is already expired");
-    
+
     require(proposal.votes[true] > proposal.votes[false], "Proposal wasn't approved");
 
     uint totalParticipation = ((proposal.votes[true] + proposal.votes[false]) * 10000) / totalSupply();
     require(totalParticipation >= minimumParticipation, "Did not meet the minimum required participation");
 
-    uint totalCancelVotes = proposal.cancelVotes[true] + proposal.cancelVotes[false];
-    uint totalCancelParticipation = (totalCancelVotes * 10000) / totalSupply();
-
-    if(totalCancelVotes > 0){
-      uint cancelApprovalPercentage = (proposal.cancelVotes[false] * 10000) / totalCancelVotes;
-      require(totalCancelParticipation < minimumParticipationForCancel &&
-            cancelApprovalPercentage < minimumCancelApprovalPercentage, "Proposal was canceled");
-    }
+    require(!_isCancelled(proposal), "Proposal was canceled");
 
     proposal.executed = true;
 
@@ -276,6 +269,19 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
     require(result, "Execution Failed");
     emit Execution(_proposalId);
   }
+
+  function _isCancelled(Proposal storage proposal) internal view returns(bool) {
+    uint totalCancelVotes = proposal.cancelVotes[true] + proposal.cancelVotes[false];
+    uint totalCancelParticipation = (totalCancelVotes * 10000) / totalSupply();
+
+    if(totalCancelVotes > 0){
+      uint cancelApprovalPercentage = (proposal.cancelVotes[true] * 10000) / totalCancelVotes;
+      return totalCancelParticipation >= minimumParticipationForCancel && cancelApprovalPercentage >= minimumCancelApprovalPercentage;
+    }
+
+    return false;
+  }
+
 
   /**
    * @notice Get the number of votes for a proposal choice
@@ -298,17 +304,14 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
   }
 
   /**
-   * @notice Check if a proposal is approved or not
+   * @notice Check proposal status
    * @param _proposalId Proposal ID
    * @return approved Indicates if the proposal was approved or not
    * @return executed Indicates if the proposal was executed or not
+   * @return canceled Indicates if the proposal was canceled or not
    */
-  function isProposalApproved(uint _proposalId) public view returns (bool approved, bool executed){
+  function proposalStatus(uint _proposalId) public view returns (bool approved, bool canceled, bool executed){
     Proposal storage proposal = proposals[_proposalId];
-
-  ///////////////////////////////
-  // TODO
-  ///////////////////////////////
 
     uint totalParticipation = ((proposal.votes[true] + proposal.votes[false]) * 10000) / totalSupply();
     if(block.number <= proposal.voteEndingBlock || totalParticipation < minimumParticipation) {
@@ -316,6 +319,9 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
     } else {
       approved = proposal.votes[true] > proposal.votes[false];
     }
+
+    canceled = block.number > proposal.voteEndingBlock + proposalCancelLength && _isCancelled(proposal);
+
     executed = proposal.executed;
   }
 
