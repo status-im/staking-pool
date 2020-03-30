@@ -88,7 +88,7 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
    * @dev Set length in blocks where a proposal can be voted for cancel. Can only be executed by the contract's controller
    * @param _proposalCancelLength Length in blocks where a proposal can be voted for cancel
    */
-  function setProposalExpirationLength(uint _proposalCancelLength) public onlyController {
+  function setProposalCancelLength(uint _proposalCancelLength) public onlyController {
     proposalCancelLength = _proposalCancelLength;
   }
 
@@ -119,7 +119,7 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
   /**
    * @dev Set minimum percentage of votes for a proposal to be considered canceled
    * @param _minimumCancelApprovalPercentage Cancel votes should reach this percentage of the votes done in the cancel period for a proposal to be considered canceled   */
-  function setMinimumParticipationForCancel(uint _minimumCancelApprovalPercentage) public onlyController {
+  function setMinimumCancelApprovalPercentage(uint _minimumCancelApprovalPercentage) public onlyController {
     minimumCancelApprovalPercentage = _minimumCancelApprovalPercentage;
   }
 
@@ -260,12 +260,14 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
     uint totalParticipation = ((proposal.votes[true] + proposal.votes[false]) * 10000) / totalSupply();
     require(totalParticipation >= minimumParticipation, "Did not meet the minimum required participation");
 
-
     uint totalCancelVotes = proposal.cancelVotes[true] + proposal.cancelVotes[false];
     uint totalCancelParticipation = (totalCancelVotes * 10000) / totalSupply();
-    uint cancelApprovalPercentage = (proposal.cancelVotes[false] * 10000) / totalCancelVotes;
-    require(totalCancelParticipation < minimumCancelParticipation &&
+
+    if(totalCancelVotes > 0){
+      uint cancelApprovalPercentage = (proposal.cancelVotes[false] * 10000) / totalCancelVotes;
+      require(totalCancelParticipation < minimumParticipationForCancel &&
             cancelApprovalPercentage < minimumCancelApprovalPercentage, "Proposal was canceled");
+    }
 
     proposal.executed = true;
 
@@ -302,6 +304,11 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
    */
   function isProposalApproved(uint _proposalId) public view returns (bool approved, bool executed){
     Proposal storage proposal = proposals[_proposalId];
+
+  ///////////////////////////////
+  // TODO
+  ///////////////////////////////
+
     uint totalParticipation = ((proposal.votes[true] + proposal.votes[false]) * 10000) / totalSupply();
     if(block.number <= proposal.voteEndingBlock || totalParticipation < minimumParticipation) {
       approved = false;
@@ -374,7 +381,7 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
     uint _proposalId,
     uint _gasPrice
   ) internal view returns (uint256, bytes memory) {
-    if(_functionSignature != VOTE_SIGNATURE || _functionSignature !== CANCEL_SIGNATURE) return _rejectRelayedCall(uint256(GSNErrorCodes.FUNCTION_NOT_AVAILABLE));
+    if(_functionSignature != VOTE_SIGNATURE || _functionSignature != CANCEL_SIGNATURE) return _rejectRelayedCall(uint256(GSNErrorCodes.FUNCTION_NOT_AVAILABLE));
 
     Proposal storage proposal = proposals[_proposalId];
 
