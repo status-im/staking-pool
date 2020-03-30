@@ -1,10 +1,10 @@
 /* solium-disable security/no-block-members */
 /* solium-disable security/no-inline-assembly */
 pragma solidity >=0.5.0 <0.6.0;
-import "openzeppelin-solidity/contracts/token/ERC20/IERC20.sol";
-import "openzeppelin-solidity/contracts/token/ERC20/ERC20.sol";
-import "openzeppelin-solidity/contracts/token/ERC20/ERC20Detailed.sol";
-import "openzeppelin-solidity/contracts/token/ERC20/ERC20Burnable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20Detailed.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20Burnable.sol";
 import "./math.sol";
 import "./token/ApproveAndCallFallBack.sol";
 import "./token/MiniMeTokenInterface.sol";

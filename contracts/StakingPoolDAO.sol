@@ -5,9 +5,10 @@ pragma solidity >=0.5.0 <0.6.0;
 
 import "./StakingPool.sol";
 import "./common/Controlled.sol";
-import "openzeppelin-solidity/contracts/drafts/ERC20Snapshot.sol";
+import "@openzeppelin/contracts/drafts/ERC20Snapshot.sol";
+import "@openzeppelin/contracts/GSN/GSNRecipient.sol";
 
-contract StakingPoolDAO is StakingPool, ERC20Snapshot, Controlled {
+contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled {
 
   enum VoteStatus {NONE, YES, NO}
 
@@ -86,10 +87,12 @@ contract StakingPoolDAO is StakingPool, ERC20Snapshot, Controlled {
 
     require(proposal.voteEndingBlock > block.number, "Proposal has already ended");
 
-    uint voterBalance = balanceOfAt(msg.sender, proposal.snapshotId);
+    address sender = _msgSender();
+
+    uint voterBalance = balanceOfAt(sender, proposal.snapshotId);
     require(voterBalance > 0, "Not enough tokens at the moment of proposal creation");
 
-    VoteStatus oldVote = proposal.voters[msg.sender];
+    VoteStatus oldVote = proposal.voters[sender];
 
     if(oldVote != VoteStatus.NONE){ // Reset
       bool oldChoice = oldVote == VoteStatus.YES ? true : false;
@@ -99,9 +102,11 @@ contract StakingPoolDAO is StakingPool, ERC20Snapshot, Controlled {
     VoteStatus enumVote = choice ? VoteStatus.YES : VoteStatus.NO;
 
     proposal.votes[choice] += voterBalance;
-    proposal.voters[msg.sender] = enumVote;
+    proposal.voters[sender] = enumVote;
 
-    emit Vote(proposalId, msg.sender, enumVote);
+    lastActivity[sender] = block.timestamp;
+
+    emit Vote(proposalId, sender, enumVote);
   }
 
   // call has been separated into its own function in order to take advantage
@@ -163,5 +168,73 @@ contract StakingPoolDAO is StakingPool, ERC20Snapshot, Controlled {
 
   function() external payable {
     //
+  }
+
+  enum GSNErrorCodes {
+    FUNCTION_NOT_AVAILABLE,
+    HAS_ETH_BALANCE,
+    GAS_PRICE,
+    TRX_TOO_SOON,
+    ALREADY_VOTED,
+    NO_TOKEN_BALANCE
+  }
+
+  bytes4 constant VOTE_SIGNATURE = bytes4(keccak256("vote(uint256,bool)"));
+
+  function acceptRelayedCall(
+      address relay,
+      address from,
+      bytes calldata encodedFunction,
+      uint256 transactionFee,
+      uint256 gasPrice,
+      uint256 gasLimit,
+      uint256 nonce,
+      bytes calldata approvalData,
+      uint256 maxPossibleCharge
+  ) external view returns (uint256, bytes memory) {
+
+    bytes memory abiEncodedFunc = encodedFunction; // Call data elements cannot be accessed directly
+    bytes4 functionSignature;
+    uint proposalId;
+
+    assembly {
+      functionSignature := mload(add(abiEncodedFunc, add(0x20, 0)))
+      proposalId := mload(add(abiEncodedFunc, 36))
+    }
+
+    return _evaluateConditions(from, functionSignature, proposalId, gasPrice);
+  }
+
+  function _evaluateConditions(
+    address _from,
+    bytes4 _functionSignature,
+    uint _proposalId,
+    uint _gasPrice
+  ) internal view returns (uint256, bytes memory) {
+    if(_functionSignature != VOTE_SIGNATURE) return _rejectRelayedCall(uint256(GSNErrorCodes.FUNCTION_NOT_AVAILABLE));
+
+    Proposal storage proposal = proposals[_proposalId];
+
+    if(balanceOfAt(_from, proposal.snapshotId) == 0) return _rejectRelayedCall(uint256(GSNErrorCodes.NO_TOKEN_BALANCE));
+
+    /* ?
+    if(from.balance > 600000 * gasPrice) return _rejectRelayedCall(uint256(GSNErrorCodes.HAS_ETH_BALANCE));
+    */
+
+    if(_gasPrice > 20000000000) return _rejectRelayedCall(uint256(GSNErrorCodes.GAS_PRICE)); // 20 gwei
+
+    if((lastActivity[_from] + 15 minutes) > block.timestamp) return _rejectRelayedCall(uint256(GSNErrorCodes.TRX_TOO_SOON));
+
+    if(proposal.voters[_from] != VoteStatus.NONE) return _rejectRelayedCall(uint256(GSNErrorCodes.ALREADY_VOTED));
+
+    return _approveRelayedCall();
+  }
+
+  mapping(address => uint) public lastActivity;
+
+  function _preRelayedCall(bytes memory context) internal returns (bytes32) {
+  }
+
+  function _postRelayedCall(bytes memory context, bool, uint256 actualCharge, bytes32) internal {
   }
 }
