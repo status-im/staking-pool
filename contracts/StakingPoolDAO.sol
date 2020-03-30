@@ -253,8 +253,9 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
     Proposal storage proposal = proposals[_proposalId];
 
     require(proposal.executed == false, "Proposal already executed");
-    require(block.number > proposal.voteEndingBlock, "Voting is still active");
+    require(block.number > proposal.voteEndingBlock + proposalCancelLength, "Voting is still active");
     require(block.number <= proposal.voteEndingBlock + proposalCancelLength + proposalExpirationLength, "Proposal is already expired");
+    
     require(proposal.votes[true] > proposal.votes[false], "Proposal wasn't approved");
 
     uint totalParticipation = ((proposal.votes[true] + proposal.votes[false]) * 10000) / totalSupply();
