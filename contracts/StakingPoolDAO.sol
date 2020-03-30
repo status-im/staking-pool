@@ -39,47 +39,73 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
   event Execution(uint indexed proposalId);
   event ExecutionFailure(uint indexed proposalId);
 
-  constructor (address _tokenAddress, uint _stakingPeriodLen, uint _proposalVoteLength, uint _proposalExpirationLength, uint _minimumParticipation) public
+  /**
+   * @dev constructor
+   * @param _tokenAddress SNT token address
+   * @param _stakingPeriodLen Length in blocks for the period where user will be able to stake SNT
+   * @param _proposalVoteLength Length in blocks for the period where voting will be available for proposals
+   * @param _proposalExpirationLength Length in blocks where a proposal must be executed after voting before it is considered expired
+   * @param _minimumParticipation Percentage of participation required for a proposal to be considered valid
+   */
+  constructor (
+    address _tokenAddress,
+    uint _stakingPeriodLen,
+    uint _proposalVoteLength,
+    uint _proposalExpirationLength,
+    uint _minimumParticipation
+  ) public
     StakingPool(_tokenAddress, _stakingPeriodLen) {
       proposalVoteLength = _proposalVoteLength;
       proposalExpirationLength = _proposalExpirationLength;
       minimumParticipation = _minimumParticipation;
   }
 
+  /**
+   * @dev Set voting period length in blocks. Can only be executed by the contract's controller
+   * @param _newProposalVoteLength Length in blocks for the period where voting will be available for proposals
+   */
   function setProposalVoteLength(uint _newProposalVoteLength) public onlyController {
     proposalVoteLength = _newProposalVoteLength;
   }
 
+  /**
+   * @dev Set length in blocks where a proposal must be executed before it is considered as expired. Can only be executed by the contract's controller
+   * @param _newProposalExpirationLength Length in blocks where a proposal must be executed after voting before it is considered expired
+   */
   function setProposalExpirationLength(uint _newProposalExpirationLength) public onlyController {
     proposalExpirationLength = _newProposalExpirationLength;
   }
 
+  /**
+   * @dev Set minimum participation percentage for proposals to be considered valid. Can only be executed by the contract's controller
+   * @param _newMinimumParticipation Percentage of participation required for a proposal to be considered valid
+   */
   function setMinimumParticipation(uint _newMinimumParticipation) public onlyController {
     minimumParticipation = _newMinimumParticipation;
   }
 
-  /// @dev Adds a new proposal
-  /// @param destination Transaction target address.
-  /// @param value Transaction ether value.
-  /// @param data Transaction data payload.
-  /// @param details Proposal details
-  /// @return Returns proposal ID.
-  function addProposal(address destination, uint value, bytes calldata data, bytes calldata details) external returns (uint proposalId)
+  /**
+   * @notice Adds a new proposal
+   * @param _destination Transaction target address
+   * @param _value Transaction ether value
+   * @param _data Transaction data payload
+   * @param _details Proposal details
+   * @return Returns proposal ID
+   */
+  function addProposal(address _destination, uint _value, bytes calldata _data, bytes calldata _details) external returns (uint proposalId)
   {
     require(balanceOf(msg.sender) > 0, "Token balance is required to perform this operation");
 
-    // TODO: should proposals have a cost? or require a minimum amount of tokens?
-
-    assert(destination != address(0));
+    assert(_destination != address(0));
 
     proposalId = proposalCount;
     proposals[proposalId] = Proposal({
-        destination: destination,
-        value: value,
-        data: data,
+        destination: _destination,
+        value: _value,
+        data: _data,
         executed: false,
         snapshotId: snapshot(),
-        details: details,
+        details: _details,
         voteEndingBlock: block.number + proposalVoteLength
     });
 
@@ -88,8 +114,13 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
     emit NewProposal(proposalId);
   }
 
-  function vote(uint proposalId, bool choice) external {
-    Proposal storage proposal = proposals[proposalId];
+  /**
+   * @notice Vote for a proposal
+   * @param _proposalId Id of the proposal to vote
+   * @param _choice True for voting yes, False for no
+   */
+  function vote(uint _proposalId, bool _choice) external {
+    Proposal storage proposal = proposals[_proposalId];
 
     require(proposal.voteEndingBlock > block.number, "Proposal has already ended");
 
@@ -105,31 +136,36 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
       proposal.votes[oldChoice] -= voterBalance;
     }
 
-    VoteStatus enumVote = choice ? VoteStatus.YES : VoteStatus.NO;
+    VoteStatus enumVote = _choice ? VoteStatus.YES : VoteStatus.NO;
 
-    proposal.votes[choice] += voterBalance;
+    proposal.votes[_choice] += voterBalance;
     proposal.voters[sender] = enumVote;
 
     lastActivity[sender] = block.timestamp;
 
-    emit Vote(proposalId, sender, enumVote);
+    emit Vote(_proposalId, sender, enumVote);
   }
 
-  // call has been separated into its own function in order to take advantage
-  // of the Solidity's code generator to produce a loop that copies tx.data into memory.
-  function external_call(address destination, uint value, uint dataLength, bytes memory data) internal returns (bool) {
+  /**
+   * @dev Execute a transaction
+   * @param _destination Transaction target address.
+   * @param _value Transaction ether value.
+   * @param _dataLength Transaction data payload length
+   * @param _data Transaction data payload.
+   */
+  function external_call(address _destination, uint _value, uint _dataLength, bytes memory _data) internal returns (bool) {
     bool result;
     assembly {
       let x := mload(0x40)   // "Allocate" memory for output (0x40 is where "free memory" pointer is stored by convention)
-      let d := add(data, 32) // First 32 bytes are the padded length of data, so exclude that
+      let d := add(_data, 32) // First 32 bytes are the padded length of data, so exclude that
       result := call(
         sub(gas, 34710),   // 34710 is the value that solidity is currently emitting
                             // It includes callGas (700) + callVeryLow (3, to pay for SUB) + callValueTransferGas (9000) +
                             // callNewAccountGas (25000, in case the destination address does not exist and needs creating)
-        destination,
-        value,
+        _destination,
+        _value,
         d,
-        dataLength,        // Size of the input (in bytes) - this is what fixes the padding problem
+        _dataLength,        // Size of the input (in bytes) - this is what fixes the padding problem
         x,
         0                  // Output is ignored, therefore the output size is zero
       )
@@ -137,10 +173,12 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
     return result;
   }
 
-  /// @dev Allows anyone to execute an approved non-expired proposal
-  /// @param proposalId Proposal ID.
-  function executeTransaction(uint proposalId) public {
-    Proposal storage proposal = proposals[proposalId];
+  /**
+   * @notice Execute an approved non-expired proposal
+   * @param _proposalId Proposal ID.
+   */
+  function executeTransaction(uint _proposalId) public {
+    Proposal storage proposal = proposals[_proposalId];
 
     require(proposal.executed == false, "Proposal already executed");
     require(block.number > proposal.voteEndingBlock, "Voting is still active");
@@ -150,25 +188,43 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
     uint totalParticipation = ((proposal.votes[true] + proposal.votes[false]) * 10000) / totalSupply();
     require(totalParticipation >= minimumParticipation, "Did not meet the minimum required participation");
 
-
     proposal.executed = true;
 
     bool result = external_call(proposal.destination, proposal.value, proposal.data.length, proposal.data);
     require(result, "Execution Failed");
-    emit Execution(proposalId);
+    emit Execution(_proposalId);
   }
 
-  function votes(uint proposalId, bool choice) public view returns (uint) {
-    return proposals[proposalId].votes[choice];
+  /**
+   * @notice Get the number of votes for a proposal choice
+   * @param _proposalId Proposal ID
+   * @param _choice True for voting yes, False for no
+   * @return Number of votes for the selected choice
+   */
+  function votes(uint _proposalId, bool _choice) public view returns (uint) {
+    return proposals[_proposalId].votes[_choice];
   }
 
-  function voteOf(address account, uint proposalId) public view returns (VoteStatus) {
-    return proposals[proposalId].voters[account];
+  /**
+   * @notice Get the vote of an account
+   * @param _account Account to obtain the vote from
+   * @param _proposalId Proposal ID
+   * @return Vote cast by an account
+   */
+  function voteOf(address _account, uint _proposalId) public view returns (VoteStatus) {
+    return proposals[_proposalId].voters[_account];
   }
 
-  function isProposalApproved(uint proposalId) public view returns (bool approved, bool executed){
-    Proposal storage proposal = proposals[proposalId];
-    if(block.number <= proposal.voteEndingBlock) {
+  /**
+   * @notice Check if a proposal is approved or not
+   * @param _proposalId Proposal ID
+   * @return approved Indicates if the proposal was approved or not
+   * @return executed Indicates if the proposal was executed or not
+   */
+  function isProposalApproved(uint _proposalId) public view returns (bool approved, bool executed){
+    Proposal storage proposal = proposals[_proposalId];
+    uint totalParticipation = ((proposal.votes[true] + proposal.votes[false]) * 10000) / totalSupply();
+    if(block.number <= proposal.voteEndingBlock || totalParticipation < minimumParticipation) {
       approved = false;
     } else {
       approved = proposal.votes[true] > proposal.votes[false];
@@ -179,6 +235,9 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
   function() external payable {
     //
   }
+
+  // ========================================================================
+  // Gas station network
 
   enum GSNErrorCodes {
     FUNCTION_NOT_AVAILABLE,
@@ -191,16 +250,23 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
 
   bytes4 constant VOTE_SIGNATURE = bytes4(keccak256("vote(uint256,bool)"));
 
+  /**
+   * @dev Function returning if we accept or not the relayed call (do we pay or not for the gas)
+   * @param from Address of the buyer getting a free transaction
+   * @param encodedFunction Function that will be called on the Escrow contract
+   * @param gasPrice Gas price
+   * @dev relay and transaction_fee are useless in our relay workflow
+   */
   function acceptRelayedCall(
-      address relay,
+      address /*relay*/,
       address from,
       bytes calldata encodedFunction,
-      uint256 transactionFee,
+      uint256 /*transactionFee*/,
       uint256 gasPrice,
-      uint256 gasLimit,
-      uint256 nonce,
-      bytes calldata approvalData,
-      uint256 maxPossibleCharge
+      uint256 /*gasLimit*/,
+      uint256 /*nonce*/,
+      bytes calldata /*approvalData*/,
+      uint256 /*maxPossibleCharge*/
   ) external view returns (uint256, bytes memory) {
 
     bytes memory abiEncodedFunc = encodedFunction; // Call data elements cannot be accessed directly
@@ -215,6 +281,13 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
     return _evaluateConditions(from, functionSignature, proposalId, gasPrice);
   }
 
+  /**
+   * @dev Evaluates if the sender conditions are valid for relaying a escrow transaction
+   * @param _from Sender
+   * @param _gasPrice Gas Price
+   * @param _functionSignature Function Signature
+   * @param _proposalId Proposal ID
+   */
   function _evaluateConditions(
     address _from,
     bytes4 _functionSignature,
@@ -227,10 +300,6 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
 
     if(balanceOfAt(_from, proposal.snapshotId) == 0) return _rejectRelayedCall(uint256(GSNErrorCodes.NO_TOKEN_BALANCE));
 
-    /* ?
-    if(from.balance > 600000 * gasPrice) return _rejectRelayedCall(uint256(GSNErrorCodes.HAS_ETH_BALANCE));
-    */
-
     if(_gasPrice > 20000000000) return _rejectRelayedCall(uint256(GSNErrorCodes.GAS_PRICE)); // 20 gwei
 
     if((lastActivity[_from] + 15 minutes) > block.timestamp) return _rejectRelayedCall(uint256(GSNErrorCodes.TRX_TOO_SOON));
@@ -242,18 +311,33 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
 
   mapping(address => uint) public lastActivity;
 
+  /**
+   * @dev Function executed before the relay. Unused by us
+   */
   function _preRelayedCall(bytes memory context) internal returns (bytes32) {
   }
 
+  /**
+   * @dev Function executed after the relay. Unused by us
+   */
   function _postRelayedCall(bytes memory context, bool, uint256 actualCharge, bytes32) internal {
   }
 
+  /**
+   * @notice Withdraw the ETH used for relay trxs
+   * @dev Only contract owner can execute this function
+   */
   function withdraw() external onlyController {
     IRelayHub rh = IRelayHub(getHubAddr());
     uint balance = rh.balanceOf(address(this));
     _withdrawDeposits(balance, msg.sender);
   }
 
+  /**
+   * @notice Set gas station network hub address
+   * @dev Only contract owner can execute this function
+   * @param _relayHub New relay hub address
+   */
   function setRelayHubAddress(address _relayHub) external onlyController {
     _upgradeRelayHub(_relayHub);
   }
