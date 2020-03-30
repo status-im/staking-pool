@@ -80,13 +80,6 @@ contract("StakingPoolDAO", function () {
     }
   })
 
-  describe("contract functionality", () => {
-    it("contract should be owned by itself", async () => {
-      const controller = await StakingPool.methods.controller().call();
-      assert.strictEqual(controller, StakingPool.options.address);
-    });
-  });
-
   describe("proposal creation", () => {
     it("non token holders can not submit proposals", async () => {
       const toSend = StakingPool.methods.addProposal(andre, 1, "0x", "0x");
@@ -268,26 +261,10 @@ contract("StakingPoolDAO", function () {
       assert.strictEqual(finalBalance, "12345");
     });
 
-    it("set minimum participation", async () => {
-      // Change minimum participation
-      const encodedCall = StakingPool.methods.setMinimumParticipation("5000").encodeABI();
-      const receipt = await StakingPool.methods.addProposal(StakingPool.options.address, 0, encodedCall, "0x").send({from: richard});
-      proposalId = receipt.events.NewProposal.returnValues.proposalId;
-
-      await StakingPool.methods.vote(proposalId, true).send({from: richard});
-
-      // Mine 20 blocks
-      for(let i = 0; i < 20; i++){
-        await mineAtTimestamp(12345678);
-      }
-
-      await StakingPool.methods.executeTransaction(proposalId).send({from: iuri});
-
-      const minimumParticipation = await StakingPool.methods.minimumParticipation().call();
-      assert.strictEqual(minimumParticipation, "5000");
-    });
-
     it("requires a minimum participation to execute a proposal", async () => {
+      // Change minimum participation
+      await StakingPool.methods.setMinimumParticipation("5000").send();
+
       const encodedCall = SNT.methods.transfer("0xAA000000000000000000000000000000000000BB", "12345").encodeABI();
       const receipt = await StakingPool.methods.addProposal(SNT.options.address, 0, encodedCall, "0x").send({from: richard});
       proposalId = receipt.events.NewProposal.returnValues.proposalId;
