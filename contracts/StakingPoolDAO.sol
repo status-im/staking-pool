@@ -24,18 +24,25 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
 
     mapping(bool => uint) votes;
     mapping(address => VoteStatus) voters;
+
+    mapping(bool => uint) cancelVotes;
+    mapping(address => VoteStatus) cancelVoters;
   }
 
   uint public proposalCount;
   mapping(uint => Proposal) public proposals;
 
   uint public proposalVoteLength; // Voting available during this period
-  uint public proposalExpirationLength; // Proposals should be executed up to 1 day after they have ended
-  
-  uint public minimumParticipation;  // Minimum participation percentage with 2 decimals 10000 == 100.00
+  uint public proposalExpirationLength; // Proposals should be executed up to some time after they have ended
+  uint public proposalCancelLength; // Voting for canceling a proposal can be done up to some time after the approval was done
+
+  uint public minimumParticipation;  // Minimum participation percentage with 2 decimals. 10000 == 100.00
+  uint public minimumParticipationForCancel; // Minimum participation percentage with 2 decimals. Required to consider the call for cancel
+  uint public minimumCancelApprovalPercentage; // Minimum percentage to consider a approved proposal as canceled. Uses 2 decimals
 
   event NewProposal(uint indexed proposalId);
   event Vote(uint indexed proposalId, address indexed voter, VoteStatus indexed choice);
+  event CancelVote(uint indexed proposalId, address indexed voter, VoteStatus indexed choice);
   event Execution(uint indexed proposalId);
   event ExecutionFailure(uint indexed proposalId);
 
@@ -44,20 +51,29 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
    * @param _tokenAddress SNT token address
    * @param _stakingPeriodLen Length in blocks for the period where user will be able to stake SNT
    * @param _proposalVoteLength Length in blocks for the period where voting will be available for proposals
+   * @param _proposalCancelLength Length in blocks for the period where a proposal can be voted for cancel
    * @param _proposalExpirationLength Length in blocks where a proposal must be executed after voting before it is considered expired
    * @param _minimumParticipation Percentage of participation required for a proposal to be considered valid
+   * @param _minimumParticipationForCancel Percentage of participation required for a proposal to be considered canceled
+   * @param _minimumCancelApprovalPercentage Cancel votes should reach this percentage of the votes done in the cancel period for a proposal to be considered canceled
    */
   constructor (
     address _tokenAddress,
     uint _stakingPeriodLen,
     uint _proposalVoteLength,
+    uint _proposalCancelLength,
     uint _proposalExpirationLength,
-    uint _minimumParticipation
+    uint _minimumParticipation,
+    uint _minimumParticipationForCancel,
+    uint _minimumCancelApprovalPercentage
   ) public
     StakingPool(_tokenAddress, _stakingPeriodLen) {
       proposalVoteLength = _proposalVoteLength;
+      proposalCancelLength = _proposalCancelLength;
       proposalExpirationLength = _proposalExpirationLength;
       minimumParticipation = _minimumParticipation;
+      minimumParticipationForCancel = _minimumParticipationForCancel;
+      minimumCancelApprovalPercentage = _minimumCancelApprovalPercentage;
   }
 
   /**
@@ -66,6 +82,14 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
    */
   function setProposalVoteLength(uint _newProposalVoteLength) public onlyController {
     proposalVoteLength = _newProposalVoteLength;
+  }
+
+  /**
+   * @dev Set length in blocks where a proposal can be voted for cancel. Can only be executed by the contract's controller
+   * @param _proposalCancelLength Length in blocks where a proposal can be voted for cancel
+   */
+  function setProposalCancelLength(uint _proposalCancelLength) public onlyController {
+    proposalCancelLength = _proposalCancelLength;
   }
 
   /**
@@ -82,6 +106,21 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
    */
   function setMinimumParticipation(uint _newMinimumParticipation) public onlyController {
     minimumParticipation = _newMinimumParticipation;
+  }
+
+  /**
+   * @dev Set minimum participation percentage for cancels to be considered valid. Can only be executed by the contract's controller
+   * @param _minimumParticipationForCancel Percentage of participation required for a proposal to be considered valid
+   */
+  function setMinimumParticipationForCancel(uint _minimumParticipationForCancel) public onlyController {
+    minimumParticipationForCancel = _minimumParticipationForCancel;
+  }
+
+  /**
+   * @dev Set minimum percentage of votes for a proposal to be considered canceled
+   * @param _minimumCancelApprovalPercentage Cancel votes should reach this percentage of the votes done in the cancel period for a proposal to be considered canceled   */
+  function setMinimumCancelApprovalPercentage(uint _minimumCancelApprovalPercentage) public onlyController {
+    minimumCancelApprovalPercentage = _minimumCancelApprovalPercentage;
   }
 
   /**
@@ -122,7 +161,7 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
   function vote(uint _proposalId, bool _choice) external {
     Proposal storage proposal = proposals[_proposalId];
 
-    require(proposal.voteEndingBlock > block.number, "Proposal has already ended");
+    require(proposal.voteEndingBlock > block.number, "Proposal voting has already ended");
 
     address sender = _msgSender();
 
@@ -144,6 +183,39 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
     lastActivity[sender] = block.timestamp;
 
     emit Vote(_proposalId, sender, enumVote);
+  }
+
+  /**
+   * @notice Vote to cancel a proposal
+   * @param _proposalId Id of the proposal to vote
+   * @param _choice True for voting yes, False for no
+   */
+  function cancel(uint _proposalId, bool _choice) external {
+    Proposal storage proposal = proposals[_proposalId];
+
+    require(proposal.voteEndingBlock + proposalCancelLength > block.number, "Proposal cancel period has already ended");
+    require(proposal.voteEndingBlock <= block.number, "Proposal cancel period has not started yet");
+
+    address sender = _msgSender();
+
+    uint voterBalance = balanceOfAt(sender, proposal.snapshotId);
+    require(voterBalance > 0, "Not enough tokens at the moment of proposal creation");
+
+    VoteStatus oldVote = proposal.cancelVoters[sender];
+
+    if(oldVote != VoteStatus.NONE){ // Reset
+      bool oldChoice = oldVote == VoteStatus.YES ? true : false;
+      proposal.cancelVotes[oldChoice] -= voterBalance;
+    }
+
+    VoteStatus enumVote = _choice ? VoteStatus.YES : VoteStatus.NO;
+
+    proposal.cancelVotes[_choice] += voterBalance;
+    proposal.cancelVoters[sender] = enumVote;
+
+    lastActivity[sender] = block.timestamp;
+
+    emit CancelVote(_proposalId, sender, enumVote);
   }
 
   /**
@@ -181,12 +253,15 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
     Proposal storage proposal = proposals[_proposalId];
 
     require(proposal.executed == false, "Proposal already executed");
-    require(block.number > proposal.voteEndingBlock, "Voting is still active");
-    require(block.number <= proposal.voteEndingBlock + proposalExpirationLength, "Proposal is already expired");
+    require(block.number > proposal.voteEndingBlock + proposalCancelLength, "Voting is still active");
+    require(block.number <= proposal.voteEndingBlock + proposalCancelLength + proposalExpirationLength, "Proposal is already expired");
+
     require(proposal.votes[true] > proposal.votes[false], "Proposal wasn't approved");
 
     uint totalParticipation = ((proposal.votes[true] + proposal.votes[false]) * 10000) / totalSupply();
     require(totalParticipation >= minimumParticipation, "Did not meet the minimum required participation");
+
+    require(!_isCancelled(proposal), "Proposal was canceled");
 
     proposal.executed = true;
 
@@ -194,6 +269,19 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
     require(result, "Execution Failed");
     emit Execution(_proposalId);
   }
+
+  function _isCancelled(Proposal storage proposal) internal view returns(bool) {
+    uint totalCancelVotes = proposal.cancelVotes[true] + proposal.cancelVotes[false];
+    uint totalCancelParticipation = (totalCancelVotes * 10000) / totalSupply();
+
+    if(totalCancelVotes > 0){
+      uint cancelApprovalPercentage = (proposal.cancelVotes[true] * 10000) / totalCancelVotes;
+      return totalCancelParticipation >= minimumParticipationForCancel && cancelApprovalPercentage >= minimumCancelApprovalPercentage;
+    }
+
+    return false;
+  }
+
 
   /**
    * @notice Get the number of votes for a proposal choice
@@ -216,19 +304,24 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
   }
 
   /**
-   * @notice Check if a proposal is approved or not
+   * @notice Check proposal status
    * @param _proposalId Proposal ID
    * @return approved Indicates if the proposal was approved or not
    * @return executed Indicates if the proposal was executed or not
+   * @return canceled Indicates if the proposal was canceled or not
    */
-  function isProposalApproved(uint _proposalId) public view returns (bool approved, bool executed){
+  function proposalStatus(uint _proposalId) public view returns (bool approved, bool canceled, bool executed){
     Proposal storage proposal = proposals[_proposalId];
+
     uint totalParticipation = ((proposal.votes[true] + proposal.votes[false]) * 10000) / totalSupply();
     if(block.number <= proposal.voteEndingBlock || totalParticipation < minimumParticipation) {
       approved = false;
     } else {
       approved = proposal.votes[true] > proposal.votes[false];
     }
+
+    canceled = block.number > proposal.voteEndingBlock + proposalCancelLength && _isCancelled(proposal);
+
     executed = proposal.executed;
   }
 
@@ -249,6 +342,7 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
   }
 
   bytes4 constant VOTE_SIGNATURE = bytes4(keccak256("vote(uint256,bool)"));
+  bytes4 constant CANCEL_SIGNATURE = bytes4(keccak256("cancel(uint256,bool)"));
 
   /**
    * @dev Function returning if we accept or not the relayed call (do we pay or not for the gas)
@@ -294,7 +388,7 @@ contract StakingPoolDAO is StakingPool, GSNRecipient, ERC20Snapshot, Controlled 
     uint _proposalId,
     uint _gasPrice
   ) internal view returns (uint256, bytes memory) {
-    if(_functionSignature != VOTE_SIGNATURE) return _rejectRelayedCall(uint256(GSNErrorCodes.FUNCTION_NOT_AVAILABLE));
+    if(_functionSignature != VOTE_SIGNATURE || _functionSignature != CANCEL_SIGNATURE) return _rejectRelayedCall(uint256(GSNErrorCodes.FUNCTION_NOT_AVAILABLE));
 
     Proposal storage proposal = proposals[_proposalId];
 

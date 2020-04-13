@@ -30,7 +30,6 @@ config({
         },
         "StakingPoolDAO": {
           "deploy": false,
-          "args": ["$SNT"]
         }
       }
   }
@@ -60,9 +59,8 @@ contract("StakingPoolDAO", function () {
     await SNT.methods.generateTokens(michael, "10000000000").send({from: iuri});
     await SNT.methods.generateTokens(eric, "10000000000").send({from: iuri});
 
-
     // Deploy Staking Pool
-    StakingPool = await StakingPoolDAO.deploy({ arguments: [SNT.options.address, 100, 20, 10, 0] }).send();
+    StakingPool = await StakingPoolDAO.deploy({ arguments: [SNT.options.address, 30, 20, 0, 10, 0, 0, 0] }).send();
     const encodedCall = StakingPool.methods.stake("10000000000").encodeABI();
 
     await web3.eth.sendTransaction({from: iuri, to: StakingPool.options.address, value: "100000000000000000"});
@@ -75,7 +73,7 @@ contract("StakingPoolDAO", function () {
     await SNT.methods.approveAndCall(StakingPool.options.address, "10000000000", encodedCall).send({from: eric});
 
     // Mine 100 blocks
-    for(let i = 0; i < 100; i++){
+    for(let i = 0; i < 30; i++){
       await mineAtTimestamp(12345678);
     }
   })
@@ -146,7 +144,7 @@ contract("StakingPoolDAO", function () {
         await mineAtTimestamp(12345678);
       }
 
-      await assert.reverts(toSend, {from: richard}, "Returned error: VM Exception while processing transaction: revert Proposal has already ended");
+      await assert.reverts(toSend, {from: richard}, "Returned error: VM Exception while processing transaction: revert Proposal voting has already ended");
     });
 
     it("check that vote result matches what was voted", async () => {
@@ -163,7 +161,7 @@ contract("StakingPoolDAO", function () {
       let votesY = await StakingPool.methods.votes(proposalId, true).call(); 
       let votesN = await StakingPool.methods.votes(proposalId, false).call();
 
-      const result = await StakingPool.methods.isProposalApproved(proposalId).call();
+      const result = await StakingPool.methods.proposalStatus(proposalId).call();
       
       assert.strictEqual(votesY, "30000000000");
       assert.strictEqual(votesN, "20000000000");
@@ -187,7 +185,7 @@ contract("StakingPoolDAO", function () {
 
     it("unapproved proposals cant be executed", async () => {
       await StakingPool.methods.vote(proposalId, false).send({from: richard});
-      
+
       // Mine 20 blocks
       for(let i = 0; i < 20; i++){
         await mineAtTimestamp(12345678);
@@ -205,7 +203,7 @@ contract("StakingPoolDAO", function () {
         await mineAtTimestamp(12345678);
       }
 
-      let result = await StakingPool.methods.isProposalApproved(proposalId).call();
+      let result = await StakingPool.methods.proposalStatus(proposalId).call();
       assert.strictEqual(result.approved, true);
       assert.strictEqual(result.executed, false);
       
@@ -214,7 +212,7 @@ contract("StakingPoolDAO", function () {
       const destinationBalance = await web3.eth.getBalance("0x00000000000000000000000000000000000000AA");
       assert.strictEqual(destinationBalance, "12345");
 
-      result = await StakingPool.methods.isProposalApproved(proposalId).call();
+      result = await StakingPool.methods.proposalStatus(proposalId).call();
       assert.strictEqual(result.executed, true);
     });
 
@@ -295,5 +293,102 @@ contract("StakingPoolDAO", function () {
 
       await StakingPool.methods.executeTransaction(proposalId).send({from: iuri});
     });
+  });
+
+  describe("proposal cancelation", () => {
+    let proposalId;
+
+    before(async () => {
+      // Setting values
+      await StakingPool.methods.setProposalCancelLength("10").send();
+      await StakingPool.methods.setMinimumParticipationForCancel("5000").send();
+      await StakingPool.methods.setMinimumCancelApprovalPercentage("7500").send();
+    });
+
+    beforeEach(async () => {
+      const receipt = await StakingPool.methods.addProposal("0x00000000000000000000000000000000000000CC", 12345, "0x", "0x").send({from: richard});
+      proposalId = receipt.events.NewProposal.returnValues.proposalId;
+    });
+
+    it("can not execute a proposal that is still in the cancelation period", async () => {
+      await StakingPool.methods.vote(proposalId, true).send({from: iuri});
+      await StakingPool.methods.vote(proposalId, true).send({from: richard});
+      await StakingPool.methods.vote(proposalId, true).send({from: pascal});
+      
+      // Mine 25 blocks
+      for(let i = 0; i < 25; i++){
+        await mineAtTimestamp(12345678);
+      }
+
+      const toSend = StakingPool.methods.executeTransaction(proposalId);
+      await assert.reverts(toSend, {from: richard}, "Returned error: VM Exception while processing transaction: revert Voting is still active");
+    });
+
+    it("can execute a proposal with no cancelation votes", async() => {
+      await StakingPool.methods.vote(proposalId, true).send({from: iuri});
+      await StakingPool.methods.vote(proposalId, true).send({from: richard});
+      await StakingPool.methods.vote(proposalId, true).send({from: pascal});
+      
+      // Mine 30 blocks
+      for(let i = 0; i < 30; i++){
+        await mineAtTimestamp(12345678);
+      }
+
+      await StakingPool.methods.executeTransaction(proposalId).send({from: richard});
+    });
+
+    it("can not vote to cancel a proposal before the voting period for it is enabled", async () => {
+      const toSend = StakingPool.methods.cancel(proposalId, true);
+      await assert.reverts(toSend, {from: richard}, "Returned error: VM Exception while processing transaction: revert Proposal cancel period has not started yet");
+    });
+
+    it("can execute a proposal that did not reach the required participation minimum", async () => {
+      await StakingPool.methods.vote(proposalId, true).send({from: iuri});
+      await StakingPool.methods.vote(proposalId, true).send({from: richard});
+      await StakingPool.methods.vote(proposalId, true).send({from: pascal});
+      
+      // Mine 20 blocks
+      for(let i = 0; i < 20; i++){
+        await mineAtTimestamp(12345678);
+      }
+
+      await StakingPool.methods.cancel(proposalId, true).send({from: iuri});
+      await StakingPool.methods.cancel(proposalId, true).send({from: richard});
+
+      for(let i = 0; i < 10; i++){
+        await mineAtTimestamp(12345678);
+      }
+
+      await StakingPool.methods.executeTransaction(proposalId).send({from: richard});
+    });
+
+    it("cannot execute a proposal that reach the required participation and cancel votes", async () => {
+      await StakingPool.methods.vote(proposalId, true).send({from: iuri});
+      await StakingPool.methods.vote(proposalId, true).send({from: richard});
+      await StakingPool.methods.vote(proposalId, true).send({from: pascal});
+      
+      // Mine 20 blocks
+      for(let i = 0; i < 20; i++){
+        await mineAtTimestamp(12345678);
+      }
+
+      await StakingPool.methods.cancel(proposalId, true).send({from: iuri});
+      await StakingPool.methods.cancel(proposalId, true).send({from: richard});
+      await StakingPool.methods.cancel(proposalId, true).send({from: pascal});
+
+      for(let i = 0; i < 10; i++){
+        await mineAtTimestamp(12345678);
+      }
+
+      const toSend = StakingPool.methods.executeTransaction(proposalId);
+      await assert.reverts(toSend, {from: richard}, "Returned error: VM Exception while processing transaction: revert Proposal was canceled");
+
+      const result = await StakingPool.methods.proposalStatus(proposalId).call();
+      
+      assert.strictEqual(result.approved, true);
+      assert.strictEqual(result.canceled, true);
+      assert.strictEqual(result.executed, false);
+    });
+
   });
 });
