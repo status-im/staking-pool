@@ -22,7 +22,7 @@
     }
   ],
   "dependencies": {
-    "@openzeppelin/contracts": "^2.5.0",
+    "@openzeppelin/contracts": "^4.7.2",
     "@openzeppelin/gsn-helpers": "^0.2.3",
     "embark": "5.2.3",
     "embark-geth": "5.2.3",
